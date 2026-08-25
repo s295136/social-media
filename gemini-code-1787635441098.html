@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>週報客資成效與 AQ/AR 逐筆明細分析儀表板</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PapaParse for CSV parsing -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-100 text-slate-800 antialiased min-h-screen p-4 md:p-8">
+    <div class="max-w-7xl mx-auto space-y-6">
+
+        <!-- 頂部資訊列 -->
+        <header class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
+                    週報客資成效儀表板
+                    <span class="text-xs bg-indigo-50 text-indigo-700 px-2.5 py-1 rounded-full font-medium">週報客資2</span>
+                </h1>
+                <p class="text-sm text-slate-500 mt-1">即時同步分類 (C欄)、媒體 (N欄) 及 AQ、AR 欄逐筆成效統計</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button id="refreshBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-xl shadow-sm transition flex items-center gap-1.5">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path></svg>
+                    重新整理
+                </button>
+                <span id="loadStatus" class="text-xs px-3 py-1.5 bg-amber-50 text-amber-700 font-medium rounded-full border border-amber-200">讀取中...</span>
+            </div>
+        </header>
+
+        <!-- 篩選器面板 -->
+        <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-200/80 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-wider">時間統計維度</label>
+                <select id="timeUnit" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <option value="day">依 天 (YYYY-MM-DD)</option>
+                    <option value="week" selected>依 週 (ISO 週數)</option>
+                    <option value="month">依 月 (YYYY-MM)</option>
+                    <option value="year">依 年 (YYYY)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-wider">分類篩選 (C欄)</label>
+                <select id="categoryFilter" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <option value="all">全部分類</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-wider">媒體篩選 (N欄)</label>
+                <select id="mediaFilter" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <option value="all">全部媒體</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-wider">AQ 欄成效值篩選</label>
+                <select id="aqFilter" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <option value="all">全部 AQ 內容</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-bold text-slate-500 uppercase mb-2 tracking-wider">AR 欄成效值篩選</label>
+                <select id="arFilter" class="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <option value="all">全部 AR 內容</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 數據指標卡片 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">總客資數</span>
+                <div id="statTotal" class="text-3xl font-extrabold text-slate-900 mt-2">-</div>
+            </div>
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">最高佔比媒體</span>
+                <div id="statTopMedia" class="text-2xl font-bold text-indigo-600 mt-2 truncate">-</div>
+            </div>
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">AQ 欄有效/填寫筆數</span>
+                <div id="statAQCount" class="text-3xl font-extrabold text-emerald-600 mt-2">-</div>
+                <div id="statAQSum" class="text-xs text-slate-500 mt-1">數值累計: -</div>
+            </div>
+            <div class="bg-white p-5 rounded-2xl border border-slate-200/80 shadow-sm">
+                <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">AR 欄有效/填寫筆數</span>
+                <div id="statARCount" class="text-3xl font-extrabold text-blue-600 mt-2">-</div>
+                <div id="statARSum" class="text-xs text-slate-500 mt-1">數值累計: -</div>
+            </div>
+        </div>
+
+        <!-- 視覺圖表 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- 趨勢圖 -->
+            <div class="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-base font-bold text-slate-800">時間趨勢成效 (客資量 vs AQ/AR)</h2>
+                </div>
+                <div class="h-72">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+            <!-- 媒體佔比圖 -->
+            <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+                <h2 class="text-base font-bold text-slate-800 mb-4">媒體分佈 (N欄)</h2>
+                <div class="h-72 flex items-center justify-center">
+                    <canvas id="mediaChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- AQ 與 AR 欄逐筆成效分佈統計 -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+                <h2 class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-emerald-500"></span> AQ 欄逐筆成效分佈
+                </h2>
+                <div id="aqBreakdown" class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    <div class="text-xs text-slate-400">載入中...</div>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl border border-slate-200/80 shadow-sm">
+                <h2 class="text-base font-bold text-slate-800 mb-3 flex items-center gap-2">
+                    <span class="w-2.5 h-2.5 rounded-full bg-blue-500"></span> AR 欄逐筆成效分佈
+                </h2>
+                <div id="arBreakdown" class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                    <div class="text-xs text-slate-400">載入中...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 區間聚合彙總表 -->
+        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h2 class="text-base font-bold text-slate-800">時間區間聚合統計表 (分類 x 媒體 x 成效)</h2>
+                <span id="rowCount" class="text-xs font-medium text-slate-500 bg-white px-2.5 py-1 rounded-full border border-slate-200"></span>
+            </div>
+            <div class="overflow-x-auto max-h-96">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead class="bg-slate-50 text-slate-500 sticky top-0 border-b border-slate-200 text-xs uppercase tracking-wider">
+                        <tr>
+                            <th class="p-3.5 pl-6 font-semibold">時間區間</th>
+                            <th class="p-3.5 font-semibold">分類 (C欄)</th>
+                            <th class="p-3.5 font-semibold">媒體 (N欄)</th>
+                            <th class="p-3.5 font-semibold text-right">客資數</th>
+                            <th class="p-3.5 font-semibold text-right">AQ 有效數 (總合)</th>
+                            <th class="p-3.5 font-semibold text-right pr-6">AR 有效數 (總合)</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summaryTable" class="divide-y divide-slate-100 text-xs font-mono">
+                        <tr><td colspan="6" class="p-6 text-center text-slate-400">載入資料中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- 逐筆資料明細表 -->
+        <div class="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
+            <div class="p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                <h2 class="text-base font-bold text-slate-800">逐筆客資明細紀錄 (含 AQ/AR 成效)</h2>
+                <span id="detailCount" class="text-xs font-medium text-slate-500"></span>
+            </div>
+            <div class="overflow-x-auto max-h-96">
+                <table class="w-full text-left border-collapse text-xs">
+                    <thead class="bg-slate-50 text-slate-500 sticky top-0 border-b border-slate-200 uppercase">
+                        <tr>
+                            <th class="p-3 pl-6 font-semibold">No.</th>
+                            <th class="p-3 font-semibold">留單/建檔日期</th>
+                            <th class="p-3 font-semibold">分類 (C欄)</th>
+                            <th class="p-3 font-semibold">客戶 / 聯絡</th>
+                            <th class="p-3 font-semibold">媒體 (N欄)</th>
+                            <th class="p-3 font-semibold">AQ 欄成效明細</th>
+                            <th class="p-3 pr-6 font-semibold">AR 欄成效明細</th>
+                        </tr>
+                    </thead>
+                    <tbody id="detailTable" class="divide-y divide-slate-100 font-mono">
+                        <tr><td colspan="7" class="p-6 text-center text-slate-400">載入資料中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+    </div>
+
+    <script>
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT89XIeyzq77eYwwxxzJsOP8K7i6xRkWsa3vdPzIk8KEJsWZJWN9-FqrG8oKQW2nzJFrlaukXjAPawb/pub?gid=596409932&single=true&output=csv';
+
+        let rawData = [];
+        let trendChartInstance = null;
+        let mediaChartInstance = null;
+
+        // 計算 ISO 8601 週
+        function getISOWeek(d) {
+            const date = new Date(d.getTime());
+            date.setHours(0, 0, 0, 0);
+            date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+            const week1 = new Date(date.getFullYear(), 0, 4);
+            const weekNum = 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+            return `${date.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+        }
+
+        // 時間格式化
+        function formatTimeKey(dateStr, unit) {
+            if (!dateStr) return '未記錄日期';
+            const cleanStr = dateStr.replace(/\//g, '-').trim();
+            const date = new Date(cleanStr);
+            if (isNaN(date.getTime())) return '未記錄日期';
+
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+
+            switch (unit) {
+                case 'year': return `${y}年`;
+                case 'month': return `${y}-${m}`;
+                case 'week': return getISOWeek(date);
+                case 'day': return `${y}-${m}-${d}`;
+                default: return `${y}-${m}-${d}`;
+            }
+        }
+
+        async function loadData() {
+            const status = document.getElementById('loadStatus');
+            status.textContent = '讀取中...';
+            status.className = 'text-xs px-3 py-1.5 bg-amber-50 text-amber-700 font-medium rounded-full border border-amber-200';
+
+            Papa.parse(CSV_URL, {
+                download: true,
+                header: false,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    if (results.data && results.data.length > 1) {
+                        const rows = results.data;
+                        let headerIdx = 0;
+                        for (let i = 0; i < Math.min(rows.length, 5); i++) {
+                            if (rows[i].includes('分類') || rows[i].includes('媒體') || rows[i].includes('建檔日期') || rows[i].includes('留單日')) {
+                                headerIdx = i;
+                                break;
+                            }
+                        }
+
+                        // C欄: index 2, D欄姓名: index 3, H欄留單日: index 7, N欄媒體: index 13, AQ: index 42, AR: index 43
+                        rawData = rows.slice(headerIdx + 1).map((r, idx) => {
+                            const dateVal = r[7] || r[8] || r[6] || r[5] || '';
+                            const aqVal = (r[42] !== undefined && r[42] !== null) ? String(r[42]).trim() : '';
+                            const arVal = (r[43] !== undefined && r[43] !== null) ? String(r[43]).trim() : '';
+
+                            return {
+                                id: idx + 1,
+                                category: (r[2] || '未分類').trim(),
+                                clientName: (r[3] || '').trim(),
+                                media: (r[13] || '未填寫').trim(),
+                                date: dateVal.trim().split(' ')[0],
+                                aqRaw: aqVal,
+                                arRaw: arVal,
+                                aqNum: parseFloat(aqVal) || 0,
+                                arNum: parseFloat(arVal) || 0,
+                                hasAQ: aqVal !== '' && aqVal !== '0',
+                                hasAR: arVal !== '' && arVal !== '0'
+                            };
+                        }).filter(item => item.category !== '' || item.media !== '');
+
+                        populateFilters();
+                        renderDashboard();
+                        status.textContent = `同步成功 (${rawData.length} 筆)`;
+                        status.className = 'text-xs px-3 py-1.5 bg-emerald-50 text-emerald-700 font-medium rounded-full border border-emerald-200';
+                    }
+                },
+                error: function(err) {
+                    status.textContent = '載入失敗';
+                    status.className = 'text-xs px-3 py-1.5 bg-rose-50 text-rose-700 font-medium rounded-full border border-rose-200';
+                    console.error(err);
+                }
+            });
+        }
+
+        function populateFilters() {
+            const categories = [...new Set(rawData.map(d => d.category))].filter(Boolean);
+            const mediaList = [...new Set(rawData.map(d => d.media))].filter(Boolean);
+            const aqValues = [...new Set(rawData.map(d => d.aqRaw))].filter(Boolean);
+            const arValues = [...new Set(rawData.map(d => d.arRaw))].filter(Boolean);
+
+            document.getElementById('categoryFilter').innerHTML = '<option value="all">全部分類</option>' + categories.map(c => `<option value="${c}">${c}</option>`).join('');
+            document.getElementById('mediaFilter').innerHTML = '<option value="all">全部媒體</option>' + mediaList.map(m => `<option value="${m}">${m}</option>`).join('');
+            document.getElementById('aqFilter').innerHTML = '<option value="all">全部 AQ 內容</option>' + aqValues.map(v => `<option value="${v}">${v}</option>`).join('');
+            document.getElementById('arFilter').innerHTML = '<option value="all">全部 AR 內容</option>' + arValues.map(v => `<option value="${v}">${v}</option>`).join('');
+        }
+
+        function renderDashboard() {
+            const timeUnit = document.getElementById('timeUnit').value;
+            const selectedCat = document.getElementById('categoryFilter').value;
+            const selectedMedia = document.getElementById('mediaFilter').value;
+            const selectedAQ = document.getElementById('aqFilter').value;
+            const selectedAR = document.getElementById('arFilter').value;
+
+            // 篩選條件
+            const filtered = rawData.filter(d => {
+                const catMatch = selectedCat === 'all' || d.category === selectedCat;
+                const mediaMatch = selectedMedia === 'all' || d.media === selectedMedia;
+                const aqMatch = selectedAQ === 'all' || d.aqRaw === selectedAQ;
+                const arMatch = selectedAR === 'all' || d.arRaw === selectedAR;
+                return catMatch && mediaMatch && aqMatch && arMatch;
+            });
+
+            // 統計卡片計算
+            let totalAQNum = 0, totalARNum = 0;
+            let countAQ = 0, countAR = 0;
+            const mediaCounts = {};
+            const aqCounts = {};
+            const arCounts = {};
+
+            filtered.forEach(d => {
+                if (d.hasAQ) { countAQ++; totalAQNum += d.aqNum; }
+                if (d.hasAR) { countAR++; totalARNum += d.arNum; }
+
+                mediaCounts[d.media] = (mediaCounts[d.media] || 0) + 1;
+                
+                const aqKey = d.aqRaw || '(空白/無)';
+                aqCounts[aqKey] = (aqCounts[aqKey] || 0) + 1;
+
+                const arKey = d.arRaw || '(空白/無)';
+                arCounts[arKey] = (arCounts[arKey] || 0) + 1;
+            });
+
+            document.getElementById('statTotal').textContent = filtered.length.toLocaleString();
+            document.getElementById('statAQCount').textContent = `${countAQ.toLocaleString()} 筆`;
+            document.getElementById('statAQSum').textContent = totalAQNum > 0 ? `數值累計: ${totalAQNum.toLocaleString()}` : '主要為文字/標記成效';
+            document.getElementById('statARCount').textContent = `${countAR.toLocaleString()} 筆`;
+            document.getElementById('statARSum').textContent = totalARNum > 0 ? `數值累計: ${totalARNum.toLocaleString()}` : '主要為文字/標記成效';
+
+            const topMedia = Object.entries(mediaCounts).sort((a, b) => b[1] - a[1])[0];
+            document.getElementById('statTopMedia').textContent = topMedia ? `${topMedia[0]} (${Math.round(topMedia[1] / (filtered.length || 1) * 100)}%)` : '-';
+
+            // 渲染 AQ / AR 逐筆成效分佈
+            renderBreakdown('aqBreakdown', aqCounts, filtered.length, 'emerald');
+            renderBreakdown('arBreakdown', arCounts, filtered.length, 'blue');
+
+            // 時間分組統計
+            const timeGrouped = {};
+            const tableGrouped = {};
+
+            filtered.forEach(d => {
+                const tKey = formatTimeKey(d.date, timeUnit);
+
+                if (!timeGrouped[tKey]) timeGrouped[tKey] = { total: 0, aqCount: 0, arCount: 0, aqSum: 0, arSum: 0 };
+                timeGrouped[tKey].total += 1;
+                if (d.hasAQ) timeGrouped[tKey].aqCount += 1;
+                if (d.hasAR) timeGrouped[tKey].arCount += 1;
+                timeGrouped[tKey].aqSum += d.aqNum;
+                timeGrouped[tKey].arSum += d.arNum;
+
+                const fullKey = `${tKey}___${d.category}___${d.media}`;
+                if (!tableGrouped[fullKey]) {
+                    tableGrouped[fullKey] = { time: tKey, cat: d.category, media: d.media, count: 0, aqCount: 0, arCount: 0, aqSum: 0, arSum: 0 };
+                }
+                tableGrouped[fullKey].count += 1;
+                if (d.hasAQ) tableGrouped[fullKey].aqCount += 1;
+                if (d.hasAR) tableGrouped[fullKey].arCount += 1;
+                tableGrouped[fullKey].aqSum += d.aqNum;
+                tableGrouped[fullKey].arSum += d.arNum;
+            });
+
+            // 渲染彙總表
+            const tableBody = document.getElementById('summaryTable');
+            const sortedTableKeys = Object.keys(tableGrouped).sort().reverse();
+            document.getElementById('rowCount').textContent = `共 ${sortedTableKeys.length} 條統計`;
+
+            if (sortedTableKeys.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">無符合條件資料</td></tr>';
+            } else {
+                tableBody.innerHTML = sortedTableKeys.map(k => {
+                    const row = tableGrouped[k];
+                    return `
+                        <tr class="hover:bg-slate-50 transition">
+                            <td class="p-3.5 pl-6 font-semibold text-slate-700">${row.time}</td>
+                            <td class="p-3.5 text-slate-600 font-sans">${row.cat}</td>
+                            <td class="p-3.5"><span class="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-sans">${row.media}</span></td>
+                            <td class="p-3.5 text-right font-bold text-slate-900">${row.count}</td>
+                            <td class="p-3.5 text-right text-emerald-600">${row.aqCount} 筆 ${row.aqSum > 0 ? `(${row.aqSum})` : ''}</td>
+                            <td class="p-3.5 text-right pr-6 text-blue-600">${row.arCount} 筆 ${row.arSum > 0 ? `(${row.arSum})` : ''}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            // 渲染逐筆明細表
+            const detailBody = document.getElementById('detailTable');
+            document.getElementById('detailCount').textContent = `顯示前 150 筆 (共 ${filtered.length} 筆)`;
+            const displayList = filtered.slice(0, 150);
+
+            if (displayList.length === 0) {
+                detailBody.innerHTML = '<tr><td colspan="7" class="p-6 text-center text-slate-400">無明細資料</td></tr>';
+            } else {
+                detailBody.innerHTML = displayList.map(item => `
+                    <tr class="hover:bg-slate-50 transition">
+                        <td class="p-3 pl-6 text-slate-400 font-mono">${item.id}</td>
+                        <td class="p-3 text-slate-600 font-mono">${item.date || '-'}</td>
+                        <td class="p-3 text-slate-700 font-sans">${item.category}</td>
+                        <td class="p-3 text-slate-600 font-sans">${item.clientName || '-'}</td>
+                        <td class="p-3"><span class="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-sans">${item.media}</span></td>
+                        <td class="p-3 font-sans">
+                            ${item.aqRaw ? `<span class="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded font-medium">${item.aqRaw}</span>` : '<span class="text-slate-300">-</span>'}
+                        </td>
+                        <td class="p-3 pr-6 font-sans">
+                            ${item.arRaw ? `<span class="px-2 py-0.5 bg-blue-50 text-blue-700 border border-blue-200 rounded font-medium">${item.arRaw}</span>` : '<span class="text-slate-300">-</span>'}
+                        </td>
+                    </tr>
+                `).join('');
+            }
+
+            // 更新圖表
+            renderCharts(timeGrouped, mediaCounts);
+        }
+
+        // 渲染成效分佈條形清單
+        function renderBreakdown(elementId, countObj, totalCount, colorTheme) {
+            const container = document.getElementById(elementId);
+            const entries = Object.entries(countObj).sort((a, b) => b[1] - a[1]);
+            
+            if (entries.length === 0) {
+                container.innerHTML = '<div class="text-xs text-slate-400">無資料</div>';
+                return;
+            }
+
+            const colorBg = colorTheme === 'emerald' ? 'bg-emerald-500' : 'bg-blue-500';
+
+            container.innerHTML = entries.map(([key, count]) => {
+                const percent = totalCount > 0 ? Math.round((count / totalCount) * 100) : 0;
+                return `
+                    <div class="flex items-center justify-between text-xs py-1">
+                        <div class="flex items-center gap-2 flex-1 mr-4">
+                            <span class="font-medium text-slate-700 truncate max-w-[160px]">${key}</span>
+                            <div class="flex-1 bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                <div class="${colorBg} h-full rounded-full" style="width: ${percent}%"></div>
+                            </div>
+                        </div>
+                        <span class="font-mono text-slate-500">${count} 筆 (${percent}%)</span>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // 繪製圖表
+        function renderCharts(timeGrouped, mediaCounts) {
+            const timeLabels = Object.keys(timeGrouped).sort();
+            const totalData = timeLabels.map(k => timeGrouped[k].total);
+            const aqData = timeLabels.map(k => timeGrouped[k].aqCount);
+            const arData = timeLabels.map(k => timeGrouped[k].arCount);
+
+            // 趨勢圖
+            const ctxTrend = document.getElementById('trendChart').getContext('2d');
+            if (trendChartInstance) trendChartInstance.destroy();
+            trendChartInstance = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [
+                        {
+                            label: '客資總量',
+                            data: totalData,
+                            borderColor: '#6366f1',
+                            backgroundColor: 'rgba(99, 102, 241, 0.05)',
+                            tension: 0.3,
+                            fill: true
+                        },
+                        {
+                            label: 'AQ 達成數',
+                            data: aqData,
+                            borderColor: '#10b981',
+                            borderDash: [4, 4],
+                            tension: 0.3,
+                            fill: false
+                        },
+                        {
+                            label: 'AR 達成數',
+                            data: arData,
+                            borderColor: '#3b82f6',
+                            borderDash: [2, 2],
+                            tension: 0.3,
+                            fill: false
+                        }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'top', labels: { boxWidth: 12, font: { size: 11 } } }
+                    },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+
+            // 媒體圓餅圖
+            const ctxMedia = document.getElementById('mediaChart').getContext('2d');
+            if (mediaChartInstance) mediaChartInstance.destroy();
+            mediaChartInstance = new Chart(ctxMedia, {
+                type: 'doughnut',
+                data: {
+                    labels: Object.keys(mediaCounts),
+                    datasets: [{
+                        data: Object.values(mediaCounts),
+                        backgroundColor: ['#6366f1', '#38bdf8', '#34d399', '#f472b6', '#fbbf24', '#a78bfa', '#cbd5e1']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } }
+                    }
+                }
+            });
+        }
+
+        // 事件監聽
+        document.getElementById('timeUnit').addEventListener('change', renderDashboard);
+        document.getElementById('categoryFilter').addEventListener('change', renderDashboard);
+        document.getElementById('mediaFilter').addEventListener('change', renderDashboard);
+        document.getElementById('aqFilter').addEventListener('change', renderDashboard);
+        document.getElementById('arFilter').addEventListener('change', renderDashboard);
+        document.getElementById('refreshBtn').addEventListener('click', loadData);
+
+        // 啟動載入
+        loadData();
+    </script>
+</body>
+</html>
