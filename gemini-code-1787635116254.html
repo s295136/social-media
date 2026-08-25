@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>週報客資成效統計儀表板</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body class="bg-slate-50 text-slate-800 min-h-screen p-4 md:p-8">
+    <div class="max-w-7xl mx-auto space-y-6">
+        <!-- 頂部標題與狀態 -->
+        <header class="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            <div>
+                <h1 class="text-2xl font-bold text-slate-900 tracking-tight">週報客資成效統計分析</h1>
+                <p class="text-sm text-slate-500 mt-1">即時同步 Google Sheets 發布資料</p>
+            </div>
+            <div class="flex items-center gap-3">
+                <button id="refreshBtn" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-sm font-medium rounded-lg transition shadow-sm">
+                    重新載入資料
+                </button>
+                <span id="loadStatus" class="text-xs px-2.5 py-1 bg-amber-50 text-amber-600 rounded-full font-medium">載入中...</span>
+            </div>
+        </header>
+
+        <!-- 控制篩選器 -->
+        <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">時間維度</label>
+                <select id="timeUnit" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <option value="day">依 天 (YYYY-MM-DD)</option>
+                    <option value="week" selected>依 週 (YYYY-Www)</option>
+                    <option value="month">依 月 (YYYY-MM)</option>
+                    <option value="year">依 年 (YYYY)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">統計目標欄位</label>
+                <select id="metricCol" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <option value="total">總客資筆數 (C欄+N欄)</option>
+                    <option value="aq">AQ 欄成效指標</option>
+                    <option value="ar">AR 欄成效指標</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">分類篩選 (C欄)</label>
+                <select id="categoryFilter" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <option value="all">全部分類</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">媒體篩選 (N欄)</label>
+                <select id="mediaFilter" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    <option value="all">全部媒體</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- 數據卡片 -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <div class="text-xs font-semibold text-slate-400 uppercase">有效總筆數</div>
+                <div id="statTotal" class="text-2xl font-bold text-slate-900 mt-2">-</div>
+            </div>
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <div class="text-xs font-semibold text-slate-400 uppercase">主要媒體佔比</div>
+                <div id="statTopMedia" class="text-2xl font-bold text-indigo-600 mt-2">-</div>
+            </div>
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <div class="text-xs font-semibold text-slate-400 uppercase">AQ 欄合計/有效</div>
+                <div id="statAQ" class="text-2xl font-bold text-slate-900 mt-2">-</div>
+            </div>
+            <div class="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
+                <div class="text-xs font-semibold text-slate-400 uppercase">AR 欄合計/有效</div>
+                <div id="statAR" class="text-2xl font-bold text-slate-900 mt-2">-</div>
+            </div>
+        </div>
+
+        <!-- 圖表分析 -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div class="lg:col-span-2 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <h2 class="text-base font-bold text-slate-800 mb-4">成效趨勢走向</h2>
+                <div class="h-72">
+                    <canvas id="trendChart"></canvas>
+                </div>
+            </div>
+            <div class="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm">
+                <h2 class="text-base font-bold text-slate-800 mb-4">媒體分佈 (N欄)</h2>
+                <div class="h-72 flex items-center justify-center">
+                    <canvas id="mediaChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <!-- 明細表格 -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div class="p-6 border-b border-slate-100 flex justify-between items-center">
+                <h2 class="text-base font-bold text-slate-800">時間區間聚合統計表</h2>
+                <span id="rowCount" class="text-xs font-medium text-slate-500"></span>
+            </div>
+            <div class="overflow-x-auto max-h-96">
+                <table class="w-full text-left border-collapse text-sm">
+                    <thead class="bg-slate-50 text-slate-500 sticky top-0 border-b border-slate-200 text-xs">
+                        <tr>
+                            <th class="p-3.5 pl-6 font-semibold">時間區間</th>
+                            <th class="p-3.5 font-semibold">分類 (C欄)</th>
+                            <th class="p-3.5 font-semibold">媒體 (N欄)</th>
+                            <th class="p-3.5 font-semibold text-right">客資數</th>
+                            <th class="p-3.5 font-semibold text-right">AQ 成效</th>
+                            <th class="p-3.5 font-semibold text-right pr-6">AR 成效</th>
+                        </tr>
+                    </thead>
+                    <tbody id="summaryTable" class="divide-y divide-slate-100 font-mono text-xs">
+                        <tr><td colspan="6" class="p-6 text-center text-slate-400">載入中...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vT89XIeyzq77eYwwxxzJsOP8K7i6xRkWsa3vdPzIk8KEJsWZJWN9-FqrG8oKQW2nzJFrlaukXjAPawb/pub?gid=596409932&single=true&output=csv';
+
+        let rawData = [];
+        let trendChartInstance = null;
+        let mediaChartInstance = null;
+
+        // 計算 ISO 週
+        function getISOWeek(d) {
+            const date = new Date(d.getTime());
+            date.setHours(0, 0, 0, 0);
+            date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+            const week1 = new Date(date.getFullYear(), 0, 4);
+            const weekNum = 1 + Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7);
+            return `${date.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
+        }
+
+        // 格式化日期分組 key
+        function formatTimeKey(dateStr, unit) {
+            if (!dateStr) return '未知日期';
+            const cleanStr = dateStr.replace(/\//g, '-').trim();
+            const date = new Date(cleanStr);
+            if (isNaN(date.getTime())) return '無效日期';
+
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+
+            switch (unit) {
+                case 'year': return `${y}`;
+                case 'month': return `${y}-${m}`;
+                case 'week': return getISOWeek(date);
+                case 'day': return `${y}-${m}-${d}`;
+                default: return `${y}-${m}-${d}`;
+            }
+        }
+
+        async function loadData() {
+            const status = document.getElementById('loadStatus');
+            status.textContent = '讀取中...';
+            status.className = 'text-xs px-2.5 py-1 bg-amber-50 text-amber-600 rounded-full font-medium';
+
+            Papa.parse(CSV_URL, {
+                download: true,
+                header: false,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    if (results.data && results.data.length > 1) {
+                        // 找到標題列 index（自動探測欄位索引）
+                        const rows = results.data;
+                        let headerIdx = 0;
+                        for (let i = 0; i < Math.min(rows.length, 5); i++) {
+                            if (rows[i].includes('分類') || rows[i].includes('媒體') || rows[i].includes('建檔日期') || rows[i].includes('留單日')) {
+                                headerIdx = i;
+                                break;
+                            }
+                        }
+
+                        // C欄: index 2, N欄: index 13, AQ: index 42, AR: index 43
+                        // 尋找日期欄 (留單日 H/I 欄 或 系統最後更新/建立日期)
+                        rawData = rows.slice(headerIdx + 1).map(r => {
+                            const dateVal = r[7] || r[8] || r[6] || r[5] || ''; // 依序取 留單日 / 來福日 / 建立日期
+                            return {
+                                category: (r[2] || '未分類').trim(),
+                                media: (r[13] || '未填寫').trim(),
+                                date: dateVal.trim().split(' ')[0], // 取 YYYY/MM/DD
+                                aq: parseFloat(r[42]) || (r[42] ? 1 : 0),
+                                ar: parseFloat(r[43]) || (r[43] ? 1 : 0),
+                                rawAQ: r[42] || '',
+                                rawAR: r[43] || ''
+                            };
+                        }).filter(item => item.category !== '' || item.media !== '');
+
+                        populateFilters();
+                        renderDashboard();
+                        status.textContent = `已同步 (${rawData.length} 筆)`;
+                        status.className = 'text-xs px-2.5 py-1 bg-emerald-50 text-emerald-600 rounded-full font-medium';
+                    }
+                },
+                error: function(err) {
+                    status.textContent = '載入失敗';
+                    status.className = 'text-xs px-2.5 py-1 bg-rose-50 text-rose-600 rounded-full font-medium';
+                    console.error(err);
+                }
+            });
+        }
+
+        function populateFilters() {
+            const categories = [...new Set(rawData.map(d => d.category))].filter(Boolean);
+            const mediaList = [...new Set(rawData.map(d => d.media))].filter(Boolean);
+
+            const catSelect = document.getElementById('categoryFilter');
+            const mediaSelect = document.getElementById('mediaFilter');
+
+            catSelect.innerHTML = '<option value="all">全部分類</option>' + categories.map(c => `<option value="${c}">${c}</option>`).join('');
+            mediaSelect.innerHTML = '<option value="all">全部媒體</option>' + mediaList.map(m => `<option value="${m}">${m}</option>`).join('');
+        }
+
+        function renderDashboard() {
+            const timeUnit = document.getElementById('timeUnit').value;
+            const targetMetric = document.getElementById('metricCol').value;
+            const selectedCat = document.getElementById('categoryFilter').value;
+            const selectedMedia = document.getElementById('mediaFilter').value;
+
+            // 篩選資料
+            const filtered = rawData.filter(d => {
+                const catMatch = selectedCat === 'all' || d.category === selectedCat;
+                const mediaMatch = selectedMedia === 'all' || d.media === selectedMedia;
+                return catMatch && mediaMatch;
+            });
+
+            // 統計卡片
+            let totalAQ = 0;
+            let totalAR = 0;
+            const mediaCounts = {};
+
+            filtered.forEach(d => {
+                totalAQ += d.aq;
+                totalAR += d.ar;
+                mediaCounts[d.media] = (mediaCounts[d.media] || 0) + 1;
+            });
+
+            document.getElementById('statTotal').textContent = filtered.length.toLocaleString();
+            document.getElementById('statAQ').textContent = totalAQ.toLocaleString();
+            document.getElementById('statAR').textContent = totalAR.toLocaleString();
+
+            const topMedia = Object.entries(mediaCounts).sort((a, b) => b[1] - a[1])[0];
+            document.getElementById('statTopMedia').textContent = topMedia ? `${topMedia[0]} (${Math.round(topMedia[1] / filtered.length * 100)}%)` : '-';
+
+            // 依時間聚合
+            const timeGrouped = {};
+            const tableGrouped = {};
+
+            filtered.forEach(d => {
+                const tKey = formatTimeKey(d.date, timeUnit);
+                
+                // 時間走向圖統計
+                if (!timeGrouped[tKey]) timeGrouped[tKey] = { count: 0, aq: 0, ar: 0 };
+                timeGrouped[tKey].count += 1;
+                timeGrouped[tKey].aq += d.aq;
+                timeGrouped[tKey].ar += d.ar;
+
+                // 表格統計 (時間 + 分類 + 媒體)
+                const fullKey = `${tKey}___${d.category}___${d.media}`;
+                if (!tableGrouped[fullKey]) {
+                    tableGrouped[fullKey] = { time: tKey, cat: d.category, media: d.media, count: 0, aq: 0, ar: 0 };
+                }
+                tableGrouped[fullKey].count += 1;
+                tableGrouped[fullKey].aq += d.aq;
+                tableGrouped[fullKey].ar += d.ar;
+            });
+
+            // 渲染表格
+            const tableBody = document.getElementById('summaryTable');
+            const sortedTableKeys = Object.keys(tableGrouped).sort().reverse();
+            document.getElementById('rowCount').textContent = `共 ${sortedTableKeys.length} 條聚合紀錄`;
+
+            if (sortedTableKeys.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="6" class="p-6 text-center text-slate-400">無符合條件資料</td></tr>';
+            } else {
+                tableBody.innerHTML = sortedTableKeys.map(k => {
+                    const row = tableGrouped[k];
+                    return `
+                        <tr class="hover:bg-slate-50 transition">
+                            <td class="p-3.5 pl-6 font-semibold text-slate-700">${row.time}</td>
+                            <td class="p-3.5 text-slate-600">${row.cat}</td>
+                            <td class="p-3.5"><span class="px-2 py-0.5 bg-slate-100 rounded text-slate-700 font-sans">${row.media}</span></td>
+                            <td class="p-3.5 text-right font-bold text-slate-900">${row.count}</td>
+                            <td class="p-3.5 text-right text-emerald-600">${row.aq}</td>
+                            <td class="p-3.5 text-right pr-6 text-indigo-600">${row.ar}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            // 更新圖表
+            renderCharts(timeGrouped, mediaCounts, targetMetric);
+        }
+
+        function renderCharts(timeGrouped, mediaCounts, metric) {
+            const timeLabels = Object.keys(timeGrouped).sort();
+            const timeData = timeLabels.map(k => {
+                if (metric === 'aq') return timeGrouped[k].aq;
+                if (metric === 'ar') return timeGrouped[k].ar;
+                return timeGrouped[k].count;
+            });
+
+            // 趨勢折線圖
+            const ctxTrend = document.getElementById('trendChart').getContext('2d');
+            if (trendChartInstance) trendChartInstance.destroy();
+            trendChartInstance = new Chart(ctxTrend, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [{
+                        label: metric === 'aq' ? 'AQ 成效' : metric === 'ar' ? 'AR 成效' : '客資數',
+                        data: timeData,
+                        borderColor: '#6366f1',
+                        backgroundColor: 'rgba(99, 102, 241, 0.08)',
+                        fill: true,
+                        tension: 0.3,
+                        pointRadius: 3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { color: '#f1f5f9' } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+
+            // 媒體圓餅圖
+            const ctxMedia = document.getElementById('mediaChart').getContext('2d');
+            if (mediaChartInstance) mediaChartInstance.destroy();
+            const mediaLabels = Object.keys(mediaCounts);
+            const mediaValues = Object.values(mediaCounts);
+
+            mediaChartInstance = new Chart(ctxMedia, {
+                type: 'doughnut',
+                data: {
+                    labels: mediaLabels,
+                    datasets: [{
+                        data: mediaValues,
+                        backgroundColor: ['#6366f1', '#38bdf8', '#34d399', '#f472b6', '#fbbf24', '#a78bfa', '#cbd5e1']
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } }
+                    }
+                }
+            });
+        }
+
+        // 事件綁定
+        document.getElementById('timeUnit').addEventListener('change', renderDashboard);
+        document.getElementById('metricCol').addEventListener('change', renderDashboard);
+        document.getElementById('categoryFilter').addEventListener('change', renderDashboard);
+        document.getElementById('mediaFilter').addEventListener('change', renderDashboard);
+        document.getElementById('refreshBtn').addEventListener('click', loadData);
+
+        // 初始載入
+        loadData();
+    </script>
+</body>
+</html>
