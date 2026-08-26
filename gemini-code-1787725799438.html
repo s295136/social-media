@@ -560,8 +560,9 @@
 
                 const cName = (r[colName] !== undefined) ? String(r[colName]).trim() : '';
                 const cPhone = (r[colPhone] !== undefined) ? String(r[colPhone]).trim() : '';
-                // 產生客戶唯一標識（優先電話+姓名，次之列號）
-                const customerKey = (cPhone || cName) ? `${cPhone}_${cName}` : `row_${i}`;
+// 純以電話（清除空格與符號）作為唯一識別；若無電話則退回以列號識別
+const cleanPhone = cPhone.replace(/[^\d]/g, '');
+const customerKey = cleanPhone ? cleanPhone : (cName ? `name_${cName}` : `row_${i}`);
 
                 const catVal = (r[colCat] !== undefined && r[colCat] !== '') ? String(r[colCat]).trim() : '';
                 const mediaVal = (r[colMedia] !== undefined && r[colMedia] !== '') ? String(r[colMedia]).trim() : '未填寫';
